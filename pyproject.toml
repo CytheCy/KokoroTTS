@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kokoro-reader"
+version = "0.1.0"
+description = "A simple local Kokoro-82M document-to-speech app"
+readme = "README.md"
+requires-python = ">=3.10,<3.14"
+license = {text = "MIT"}
+dependencies = [
+    "kokoro==0.9.4",
+    "PySide6>=6.7,<7",
+    "soundfile>=0.12",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.gui-scripts]
+kokoro-reader = "kokoro_reader.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

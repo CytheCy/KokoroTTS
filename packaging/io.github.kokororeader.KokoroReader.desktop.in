@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Kokoro Reader
+Comment=Turn documents into speech locally with Kokoro-82M
+Exec=@PROJECT_DIR@/run.sh
+Icon=audio-x-generic
+Terminal=false
+Categories=AudioVideo;Audio;
+StartupNotify=true
