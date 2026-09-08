@@ -53,11 +53,14 @@ class MainWindow(QMainWindow):
         self.player.setAudioOutput(self.audio_output)
         self.player.playbackStateChanged.connect(self._playback_state_changed)
         self.player.mediaStatusChanged.connect(self._media_status_changed)
+        self.player.positionChanged.connect(self._playback_position_changed)
+        self.player.durationChanged.connect(self._playback_duration_changed)
         self.player.errorOccurred.connect(self._playback_error)
         self._stream_sink: QAudioSink | None = None
         self._stream_device: QIODevice | None = None
         self._stream_queue: deque[bytes] = deque()
         self._stream_offset = 0
+        self._stream_total_bytes = 0
         self._stream_paused = False
         self._stream_disabled = False
         self._generation_complete = False
@@ -103,6 +106,11 @@ class MainWindow(QMainWindow):
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
+        self.playback_progress = QProgressBar()
+        self.playback_progress.setRange(0, 100)
+        self.playback_progress.setValue(0)
+        self.playback_progress.setFormat("Playback: %p%")
+        self.playback_progress.setAccessibleName("Audio playback progress")
         self.status = QLabel("Ready — speech is generated locally on this computer.")
         self.status.setWordWrap(True)
         self.preload_finished.connect(self._preload_finished)
@@ -128,6 +136,7 @@ class MainWindow(QMainWindow):
         layout.addLayout(file_row)
         layout.addWidget(self.folder_label)
         layout.addWidget(self.progress)
+        layout.addWidget(self.playback_progress)
         layout.addWidget(self.status)
         layout.addLayout(button_row)
 
@@ -202,6 +211,7 @@ class MainWindow(QMainWindow):
         self.player.setSource(QUrl())
         self.play_button.setText("Play audio")
         self.play_button.setEnabled(False)
+        self._reset_playback_progress()
 
         thread = QThread(self)
         worker = SpeechWorker(
@@ -254,6 +264,7 @@ class MainWindow(QMainWindow):
     def _audio_ready(self, audio: bytes) -> None:
         if not audio or self._stream_disabled:
             return
+        self._stream_total_bytes += len(audio)
         self._stream_queue.append(audio)
         if self._stream_sink is None:
             self._start_stream()
@@ -272,6 +283,7 @@ class MainWindow(QMainWindow):
         self._stream_timer.start()
         self.play_button.setText("Pause")
         self.play_button.setEnabled(True)
+        self._update_stream_progress()
 
     def _pump_stream(self) -> None:
         sink = self._stream_sink
@@ -299,6 +311,16 @@ class MainWindow(QMainWindow):
                 self._stream_offset = 0
 
         self._maybe_finish_stream()
+        self._update_stream_progress()
+
+    def _update_stream_progress(self) -> None:
+        sink = self._stream_sink
+        if sink is None or self._stream_total_bytes <= 0:
+            return
+        duration_ms = max(1, self._stream_total_bytes * 1000 // (SAMPLE_RATE * 2))
+        played_ms = min(duration_ms, sink.processedUSecs() // 1000)
+        self.playback_progress.setRange(0, duration_ms)
+        self.playback_progress.setValue(played_ms)
 
     def _stream_state_changed(self, state: QAudio.State) -> None:
         if state == QAudio.State.IdleState:
@@ -331,6 +353,12 @@ class MainWindow(QMainWindow):
             return
 
         filename = self._completed_filename
+        if self._stream_total_bytes > 0:
+            duration_ms = max(
+                1, self._stream_total_bytes * 1000 // (SAMPLE_RATE * 2)
+            )
+            self.playback_progress.setRange(0, duration_ms)
+            self.playback_progress.setValue(duration_ms)
         self._stop_stream()
         if filename is not None:
             self.player.setSource(QUrl.fromLocalFile(filename))
@@ -349,6 +377,7 @@ class MainWindow(QMainWindow):
             sink.deleteLater()
         self._stream_queue.clear()
         self._stream_offset = 0
+        self._stream_total_bytes = 0
         self._stream_paused = False
 
     def _toggle_playback(self) -> None:
@@ -374,9 +403,25 @@ class MainWindow(QMainWindow):
         else:
             self.play_button.setText("Play audio")
 
+    def _playback_position_changed(self, position: int) -> None:
+        if self.player.duration() > 0:
+            self.playback_progress.setValue(position)
+
+    def _playback_duration_changed(self, duration: int) -> None:
+        if duration > 0:
+            self.playback_progress.setRange(0, duration)
+            self.playback_progress.setValue(min(self.player.position(), duration))
+        else:
+            self._reset_playback_progress()
+
+    def _reset_playback_progress(self) -> None:
+        self.playback_progress.setRange(0, 100)
+        self.playback_progress.setValue(0)
+
     def _media_status_changed(self, status: QMediaPlayer.MediaStatus) -> None:
         if status == QMediaPlayer.MediaStatus.EndOfMedia:
             self.player.setPosition(0)
+            self.playback_progress.setValue(0)
             self.play_button.setText("Play audio")
 
     def _playback_error(self, _error, message: str) -> None:
@@ -385,6 +430,7 @@ class MainWindow(QMainWindow):
 
     def _failed(self, message: str) -> None:
         self._stop_stream()
+        self._reset_playback_progress()
         self.status.setText("Audio generation failed.")
         QMessageBox.critical(
             self,
@@ -394,6 +440,7 @@ class MainWindow(QMainWindow):
 
     def _cancelled(self) -> None:
         self._stop_stream()
+        self._reset_playback_progress()
         self.status.setText("Cancelled. No incomplete audio file was kept.")
 
     def _thread_finished(self) -> None:
