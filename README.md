@@ -34,9 +34,10 @@ sudo dnf install python3.12 espeak-ng libsndfile
 ## Use
 
 1. Paste a document into the notepad area.
-2. Choose an American or British Kokoro voice.
-3. Use **Settings…** to choose the permanent audio output folder.
-4. Enter a filename and select **Create audio**. Playback starts automatically as
+2. For Markdown text, click **Remove Headings** to delete lines beginning with `#`.
+3. Choose an American or British Kokoro voice.
+4. Use **Settings…** to choose the permanent audio output folder.
+5. Enter a filename and select **Create audio**. Playback starts automatically as
    soon as the first speech segment is ready; the rest continues generating in the
    background while you listen.
 

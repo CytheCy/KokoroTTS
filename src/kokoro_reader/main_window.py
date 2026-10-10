@@ -9,6 +9,7 @@ import re
 import threading
 
 from PySide6.QtCore import QIODevice, QSettings, QThread, Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QTextCursor
 from PySide6.QtMultimedia import (
     QAudio,
     QAudioFormat,
@@ -33,6 +34,7 @@ from PySide6.QtWidgets import (
 from .settings_dialog import SETTINGS_APP, SETTINGS_ORG, SettingsDialog, output_directory
 from .engine import KokoroEngine, SAMPLE_RATE
 from .output_naming import available_path
+from .text_cleaning import remove_heading_lines
 from .voices import VOICES
 from .worker import SpeechWorker
 
@@ -72,6 +74,10 @@ class MainWindow(QMainWindow):
         self.editor.setAcceptRichText(False)
         self.editor.setPlaceholderText("Paste the document you want Kokoro to read here…")
         self.editor.setAccessibleName("Document text")
+        self.remove_headings_button = QPushButton("Remove Headings")
+        self.remove_headings_button.setEnabled(False)
+        self.remove_headings_button.clicked.connect(self._remove_headings)
+        self.editor.textChanged.connect(self._update_remove_headings_button)
 
         self.voice = QComboBox()
         for description, voice_id in VOICES:
@@ -130,8 +136,13 @@ class MainWindow(QMainWindow):
         button_row.addWidget(self.cancel_button)
         button_row.addWidget(self.generate_button)
 
+        editor_row = QHBoxLayout()
+        editor_row.addStretch()
+        editor_row.addWidget(self.remove_headings_button)
+
         layout = QVBoxLayout()
         layout.addWidget(self.editor, 1)
+        layout.addLayout(editor_row)
         layout.addLayout(voice_row)
         layout.addLayout(file_row)
         layout.addWidget(self.folder_label)
@@ -168,6 +179,24 @@ class MainWindow(QMainWindow):
         voice_id = self.voice.currentData()
         if voice_id is not None:
             QSettings(SETTINGS_ORG, SETTINGS_APP).setValue("voice", str(voice_id))
+
+    def _update_remove_headings_button(self) -> None:
+        has_headings = any(
+            line.startswith("#") for line in self.editor.toPlainText().splitlines()
+        )
+        self.remove_headings_button.setEnabled(
+            not self.editor.isReadOnly() and has_headings
+        )
+
+    def _remove_headings(self) -> None:
+        text = self.editor.toPlainText()
+        without_headings = remove_heading_lines(text)
+        if without_headings == text:
+            return
+        cursor = self.editor.textCursor()
+        cursor.select(QTextCursor.SelectionType.Document)
+        cursor.insertText(without_headings)
+        self.editor.setTextCursor(cursor)
 
     def _preload_selected_voice(self, voice_id: str) -> None:
         try:
@@ -245,6 +274,7 @@ class MainWindow(QMainWindow):
 
     def _set_running(self, running: bool) -> None:
         self.editor.setReadOnly(running)
+        self._update_remove_headings_button()
         self.voice.setEnabled(not running)
         self.filename.setEnabled(not running)
         self.generate_button.setEnabled(not running)

@@ -40,6 +40,13 @@ PUNCTUATION_TRANSLATION = str.maketrans(
 SPEAKABLE_PUNCTUATION = frozenset(".,!?;:'\"-()")
 
 
+def remove_heading_lines(text: str) -> str:
+    """Remove complete lines that begin with a Markdown heading marker."""
+    return "".join(
+        line for line in text.splitlines(keepends=True) if not line.startswith("#")
+    )
+
+
 def _filter_characters(text: str) -> str:
     result: list[str] = []
     for character in text:

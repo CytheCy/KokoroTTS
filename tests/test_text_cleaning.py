@@ -1,4 +1,13 @@
-from kokoro_reader.text_cleaning import clean_for_speech
+from kokoro_reader.text_cleaning import clean_for_speech, remove_heading_lines
+
+
+def test_remove_heading_lines_keeps_other_lines_and_spacing():
+    source = "# 03 Time to Kill\n\nFirst paragraph.\n## Part Two\n#No space\n    # code\nLast line"
+    assert remove_heading_lines(source) == "\nFirst paragraph.\n    # code\nLast line"
+
+
+def test_remove_heading_lines_handles_final_heading_and_crlf():
+    assert remove_heading_lines("Body\r\n# Heading") == "Body\r\n"
 
 
 def test_removes_markdown_but_keeps_readable_text():
@@ -24,4 +33,3 @@ def test_removes_html_urls_and_markdown_reference_destinations():
 def test_keeps_paragraphs_and_common_sentence_punctuation():
     source = "First: yes, it is (ready)!\n\nSecond paragraph?"
     assert clean_for_speech(source) == source
-
