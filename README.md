@@ -45,6 +45,14 @@ When generation and live playback finish, the completed recording remains
 available through **Play audio**. The same button pauses and resumes the live
 stream while speech is still being generated.
 
+To convert a folder, choose a voice and click **Batch folder…**, then select the
+folder containing `.md` files. The app reads the Markdown files directly in that
+folder, removes lines beginning with `#`, and creates one WAV per file in the
+configured audio output folder. For example, `MTTRC/01-the-first-day.md` becomes
+`MTTRC - 01-the-first-day.wav`. The source Markdown files are left unchanged.
+The progress bar tracks files, and **Cancel** stops the batch while keeping WAVs
+that already finished.
+
 Output is a mono 24 kHz WAV. Each file is written to a hidden temporary file and
 moved into place only after generation succeeds, so cancellation or an error does
 not leave a broken WAV behind. If the requested filename already exists, the app

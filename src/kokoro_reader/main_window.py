@@ -19,6 +19,7 @@ from PySide6.QtMultimedia import (
 )
 from PySide6.QtWidgets import (
     QComboBox,
+    QFileDialog,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -36,7 +37,7 @@ from .engine import KokoroEngine, SAMPLE_RATE
 from .output_naming import available_path
 from .text_cleaning import remove_heading_lines
 from .voices import VOICES
-from .worker import SpeechWorker
+from .worker import BatchSpeechWorker, SpeechWorker
 
 
 class MainWindow(QMainWindow):
@@ -47,7 +48,8 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Kokoro Reader")
         self.resize(820, 650)
         self._thread: QThread | None = None
-        self._worker: SpeechWorker | None = None
+        self._worker: SpeechWorker | BatchSpeechWorker | None = None
+        self._batch_output_folder: Path | None = None
         # Pipelines are expensive to load, so retain them between generation jobs.
         self._engine = KokoroEngine()
         self.audio_output = QAudioOutput(self)
@@ -102,6 +104,9 @@ class MainWindow(QMainWindow):
         self.generate_button = QPushButton("Create audio")
         self.generate_button.setDefault(True)
         self.generate_button.clicked.connect(self._generate)
+        self.batch_button = QPushButton("Batch folder…")
+        self.batch_button.setToolTip("Create a WAV for each Markdown file in a folder")
+        self.batch_button.clicked.connect(self._batch)
         self.cancel_button = QPushButton("Cancel")
         self.cancel_button.setEnabled(False)
         self.cancel_button.clicked.connect(self._cancel)
@@ -134,6 +139,7 @@ class MainWindow(QMainWindow):
         button_row.addWidget(self.play_button)
         button_row.addStretch()
         button_row.addWidget(self.cancel_button)
+        button_row.addWidget(self.batch_button)
         button_row.addWidget(self.generate_button)
 
         editor_row = QHBoxLayout()
@@ -267,6 +273,66 @@ class MainWindow(QMainWindow):
         self.progress.setRange(0, 0)
         thread.start()
 
+    def _batch(self) -> None:
+        chosen = QFileDialog.getExistingDirectory(
+            self, "Choose a folder of Markdown files", str(Path.home())
+        )
+        if not chosen:
+            return
+        folder = Path(chosen)
+        try:
+            files = sorted(
+                (
+                    path
+                    for path in folder.iterdir()
+                    if path.is_file() and path.suffix.lower() == ".md"
+                ),
+                key=lambda path: path.name.casefold(),
+            )
+        except OSError as exc:
+            QMessageBox.warning(self, "Cannot read folder", str(exc))
+            return
+        if not files:
+            QMessageBox.information(
+                self, "No Markdown files", "The selected folder has no .md files."
+            )
+            return
+
+        self._stop_stream()
+        self.player.stop()
+        self.player.setSource(QUrl())
+        self.play_button.setText("Play audio")
+        self.play_button.setEnabled(False)
+        self._reset_playback_progress()
+        self._generation_complete = False
+        self._completed_filename = None
+
+        thread = QThread(self)
+        self._batch_output_folder = output_directory()
+        worker = BatchSpeechWorker(
+            files,
+            str(self.voice.currentData()),
+            self._batch_output_folder,
+            self._engine,
+        )
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.progress.connect(self._batch_progress)
+        worker.status.connect(self.status.setText)
+        worker.completed.connect(self._batch_completed)
+        worker.cancelled.connect(self._batch_cancelled)
+        worker.finished.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._thread_finished)
+        self._thread = thread
+        self._worker = worker
+        self._set_running(True)
+        self.progress.setRange(0, len(files))
+        self.progress.setValue(0)
+        self.status.setText(f"Creating audio for {len(files)} Markdown files…")
+        thread.start()
+
     def _cancel(self) -> None:
         if self._worker is not None:
             self._worker.cancel()
@@ -278,7 +344,27 @@ class MainWindow(QMainWindow):
         self.voice.setEnabled(not running)
         self.filename.setEnabled(not running)
         self.generate_button.setEnabled(not running)
+        self.batch_button.setEnabled(not running)
         self.cancel_button.setEnabled(running)
+
+    def _batch_progress(self, current: int, total: int) -> None:
+        self.progress.setRange(0, total)
+        self.progress.setValue(current)
+
+    def _batch_completed(self, created: int, total: int, errors: list[str]) -> None:
+        self.status.setText(
+            f"Batch finished: {created} of {total} audio files saved to {self._batch_output_folder}."
+        )
+        if errors:
+            details = "\n".join(errors[:10])
+            if len(errors) > 10:
+                details += f"\n…and {len(errors) - 10} more."
+            QMessageBox.warning(self, "Some files could not be converted", details)
+
+    def _batch_cancelled(self, created: int, total: int) -> None:
+        self.status.setText(
+            f"Batch cancelled. {created} of {total} audio files were completed."
+        )
 
     def _progress(self, current: int, total: int) -> None:
         self.progress.setRange(0, total)
