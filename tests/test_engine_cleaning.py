@@ -64,3 +64,23 @@ def test_engine_preloads_selected_voice():
     engine.preload("af_heart")
 
     assert pipeline.loaded_voice == "af_heart"
+
+
+def test_event_year_survives_cleaning_and_reaches_speech_engine(tmp_path):
+    from datetime import date
+    from kokoro_reader.timeline import Event
+
+    event = Event(tmp_path / "note.md", date(2040, 7, 12), "An event", "AI", "Body.")
+    engine = KokoroEngine()
+    pipeline = FakePipeline()
+    engine._pipelines["a"] = pipeline
+    for read_year in (True, False):
+        pipeline.received.clear()
+        engine.synthesize(
+            event.narration(read_year=read_year), "af_heart", tmp_path / "event.wav",
+            lambda *_: None, lambda: False,
+        )
+        spoken = " ".join(text for text, _ in pipeline.received)
+        assert ("Year 2040." in spoken) == read_year
+        assert "An event." in spoken
+        assert "July" not in spoken

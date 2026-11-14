@@ -33,7 +33,7 @@ sudo dnf install python3.12 espeak-ng libsndfile
 
 ## Use
 
-1. Paste a document into the notepad area.
+1. Open the **Paste** tab and paste a document into the notepad area.
 2. For Markdown text, click **Remove Headings** to delete lines beginning with `#`.
 3. Choose an American or British Kokoro voice.
 4. Use **Settings…** to choose the permanent audio output folder.
@@ -44,6 +44,29 @@ sudo dnf install python3.12 espeak-ng libsndfile
 When generation and live playback finish, the completed recording remains
 available through **Play audio**. The same button pauses and resumes the live
 stream while speech is still being generated.
+
+For timeline narration, open the **Event** tab and click **Choose folder…**.
+Select your timeline folder (for example,
+`/home/cport/Desktop/Obsidian20xx/Timeline`). The reader loads `.md` files directly
+inside that folder, using the `date`, `title`, and `category` (or `cat`) YAML
+metadata. When `.settings/categories.json` is present, it uses category IDs and
+parent relationships to build the category / subcategory selector. Choosing a
+parent includes all its descendants; **All categories** includes every event.
+Category names containing commas are kept intact.
+
+Choose inclusive **Start year** and **End year** values. The preview shows the
+matching events in metadata date order, with filename order breaking date ties.
+The **Read Year** checkbox is checked by default; uncheck it to omit years from
+the preview and speech. Enabled years use “Year 2040.” so the text cleaner does
+not mistake them for numbered-list markers. This preference is remembered.
+Click **Create audio** to read their years (when enabled), titles, and bodies as one continuous
+recording with the same voice, streaming playback, pause, cancel, and WAV output
+controls as Paste. Metadata itself is excluded. Notes with only a title are also
+included. Invalid or missing dates are skipped, and file issues are available
+through **Show file issues…**. The reader can recover the scalar fields from
+non-standard YAML exports such as unescaped title quotes or multiline labels.
+The chosen folder is remembered; **Reload** refreshes notes after external edits.
+Pasted text stays intact when switching tabs, and source notes are never modified.
 
 To convert a folder, choose a voice and click **Batch folder…**, then select the
 folder containing `.md` files. The app reads the Markdown files directly in that

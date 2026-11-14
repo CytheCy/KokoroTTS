@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QTextEdit,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -38,6 +39,7 @@ from .output_naming import available_path
 from .text_cleaning import remove_heading_lines
 from .voices import VOICES
 from .worker import BatchSpeechWorker, SpeechWorker
+from .event_tab import EventTab
 
 
 class MainWindow(QMainWindow):
@@ -146,9 +148,19 @@ class MainWindow(QMainWindow):
         editor_row.addStretch()
         editor_row.addWidget(self.remove_headings_button)
 
+        paste_layout = QVBoxLayout()
+        paste_layout.addWidget(self.editor, 1)
+        paste_layout.addLayout(editor_row)
+        paste_tab = QWidget()
+        paste_tab.setLayout(paste_layout)
+        self.event_tab = EventTab()
+        self.tabs = QTabWidget()
+        self.tabs.addTab(paste_tab, "Paste")
+        self.tabs.addTab(self.event_tab, "Event")
+        self.tabs.currentChanged.connect(self._tab_changed)
+
         layout = QVBoxLayout()
-        layout.addWidget(self.editor, 1)
-        layout.addLayout(editor_row)
+        layout.addWidget(self.tabs, 1)
         layout.addLayout(voice_row)
         layout.addLayout(file_row)
         layout.addWidget(self.folder_label)
@@ -232,10 +244,20 @@ class MainWindow(QMainWindow):
         self.filename.setText(destination.name)
         return destination
 
+    def _tab_changed(self, index: int) -> None:
+        self.batch_button.setVisible(index == 0)
+
     def _generate(self) -> None:
-        text = self.editor.toPlainText().strip()
+        if self._thread is not None:
+            return
+        is_event = self.tabs.currentWidget() is self.event_tab
+        text = self.event_tab.narration() if is_event else self.editor.toPlainText().strip()
         if not text:
-            QMessageBox.information(self, "Nothing to read", "Paste or type a document first.")
+            message = (
+                "Choose a timeline folder and filters that match at least one event."
+                if is_event else "Paste or type a document first."
+            )
+            QMessageBox.information(self, "Nothing to read", message)
             return
         destination = self._destination()
         if destination is None:
@@ -340,6 +362,8 @@ class MainWindow(QMainWindow):
 
     def _set_running(self, running: bool) -> None:
         self.editor.setReadOnly(running)
+        self.event_tab.set_running(running)
+        self.tabs.tabBar().setEnabled(not running)
         self._update_remove_headings_button()
         self.voice.setEnabled(not running)
         self.filename.setEnabled(not running)
