@@ -22,13 +22,16 @@ class SpeechWorker(QObject):
     finished = Signal()
 
     def __init__(
-        self, text: str, voice: str, destination: Path, engine: KokoroEngine
+        self, text: str, voice: str, destination: Path, engine: KokoroEngine,
+        *, event_texts: list[str] | None = None, event_pause_seconds: float = 1.0,
     ) -> None:
         super().__init__()
         self.text = text
         self.voice = voice
         self.destination = destination
         self.engine = engine
+        self.event_texts = event_texts
+        self.event_pause_seconds = event_pause_seconds
         self._cancel_event = threading.Event()
 
     @Slot()
@@ -41,6 +44,12 @@ class SpeechWorker(QObject):
         try:
             self.status.emit("Loading Kokoro-82M (the first run may download model files)…")
             self.status.emit("Removing formatting and unsupported characters…")
+            options = {}
+            if self.event_texts is not None:
+                options = {
+                    "event_texts": self.event_texts,
+                    "event_pause_seconds": self.event_pause_seconds,
+                }
             self.engine.synthesize(
                 self.text,
                 self.voice,
@@ -48,6 +57,7 @@ class SpeechWorker(QObject):
                 self.progress.emit,
                 self._cancel_event.is_set,
                 self.audio_ready.emit,
+                **options,
             )
             self.completed.emit(str(self.destination))
         except CancelledError:

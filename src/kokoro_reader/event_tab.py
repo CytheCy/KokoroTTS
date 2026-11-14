@@ -1,10 +1,11 @@
 """Folder and filters for the chronological event reader."""
 
 from pathlib import Path
+import re
 
-from PySide6.QtCore import QSettings
+from PySide6.QtCore import QSettings, Signal
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
+    QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
     QPushButton, QSpinBox, QTextEdit, QVBoxLayout, QWidget,
 )
 
@@ -13,6 +14,8 @@ from .timeline import Timeline, load_timeline
 
 
 class EventTab(QWidget):
+    filters_changed = Signal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.timeline = Timeline([], {}, [])
@@ -51,6 +54,23 @@ class EventTab(QWidget):
         self.read_year.setChecked(
             QSettings(SETTINGS_ORG, SETTINGS_APP).value("event_read_year", True, type=bool)
         )
+        self.pause_seconds = QDoubleSpinBox()
+        self.pause_seconds.setRange(0, 60)
+        self.pause_seconds.setDecimals(2)
+        self.pause_seconds.setSingleStep(0.25)
+        self.pause_seconds.setSuffix(" s")
+        self.pause_seconds.setAccessibleName("Pause between events in seconds")
+        self.pause_seconds.setToolTip("Silence inserted between events. Set to 0 for no added pause.")
+        self.pause_seconds.setValue(
+            QSettings(SETTINGS_ORG, SETTINGS_APP).value("event_pause_seconds", 1.0, type=float)
+        )
+        narration_options = QHBoxLayout()
+        narration_options.addWidget(self.read_year)
+        pause_label = QLabel("Pause between events:")
+        pause_label.setBuddy(self.pause_seconds)
+        narration_options.addWidget(pause_label)
+        narration_options.addWidget(self.pause_seconds)
+        narration_options.addStretch()
         self.summary = QLabel("Choose a timeline folder to begin.")
         self.summary.setWordWrap(True)
         self.preview = QTextEdit()
@@ -65,12 +85,13 @@ class EventTab(QWidget):
         layout = QVBoxLayout(self)
         layout.addLayout(folder_row)
         layout.addLayout(filters)
-        layout.addWidget(self.read_year)
+        layout.addLayout(narration_options)
         layout.addWidget(self.summary)
         layout.addWidget(self.preview, 1)
         layout.addWidget(self.warnings)
         layout.addWidget(self.details_button)
         self.read_year.toggled.connect(self._read_year_changed)
+        self.pause_seconds.valueChanged.connect(self._pause_changed)
         self.start_year.valueChanged.connect(self._refresh)
         self.end_year.valueChanged.connect(self._refresh)
         self.category.currentIndexChanged.connect(self._refresh)
@@ -81,6 +102,9 @@ class EventTab(QWidget):
     def _read_year_changed(self, checked: bool):
         QSettings(SETTINGS_ORG, SETTINGS_APP).setValue("event_read_year", checked)
         self._refresh()
+
+    def _pause_changed(self, seconds: float):
+        QSettings(SETTINGS_ORG, SETTINGS_APP).setValue("event_pause_seconds", seconds)
 
     def _choose_folder(self):
         chosen = QFileDialog.getExistingDirectory(
@@ -123,6 +147,7 @@ class EventTab(QWidget):
         dialog.exec()
 
     def _refresh(self, *_args):
+        self.filters_changed.emit()
         if self.start_year.value() > self.end_year.value():
             self.summary.setText("Start year must be before or equal to end year.")
             self.preview.clear()
@@ -136,10 +161,25 @@ class EventTab(QWidget):
     def narration(self) -> str:
         return self.preview.toPlainText().strip()
 
+    def event_narrations(self) -> list[str]:
+        return [
+            event.narration(read_year=self.read_year.isChecked())
+            for event in self.timeline.select(
+                self.category.currentData(), self.start_year.value(), self.end_year.value()
+            )
+        ]
+
+    def suggested_filename(self) -> str:
+        category = self.category.currentData() or "All categories"
+        category = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", category).strip(" .")
+        category = category or "Uncategorized"
+        return f"{category}-{self.start_year.value()}-{self.end_year.value()}.wav"
+
     def set_running(self, running: bool):
         self.choose_button.setEnabled(not running)
         self.reload_button.setEnabled(not running and bool(self.folder.text()))
         self.read_year.setEnabled(not running)
+        self.pause_seconds.setEnabled(not running)
         self.category.setEnabled(not running)
         self.start_year.setEnabled(not running)
         self.end_year.setEnabled(not running)

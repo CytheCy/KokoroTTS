@@ -94,7 +94,8 @@ class MainWindow(QMainWindow):
         self.voice.currentIndexChanged.connect(self._save_voice)
         self.voice.setAccessibleName("Voice")
 
-        self.filename = QLineEdit(self._suggested_filename())
+        self._default_filename = self._suggested_filename()
+        self.filename = QLineEdit(self._default_filename)
         self.filename.setPlaceholderText("narration.wav")
         self.filename.setAccessibleName("Output filename")
 
@@ -158,6 +159,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(paste_tab, "Paste")
         self.tabs.addTab(self.event_tab, "Event")
         self.tabs.currentChanged.connect(self._tab_changed)
+        self.event_tab.filters_changed.connect(self._refresh_filename)
 
         layout = QVBoxLayout()
         layout.addWidget(self.tabs, 1)
@@ -246,6 +248,17 @@ class MainWindow(QMainWindow):
 
     def _tab_changed(self, index: int) -> None:
         self.batch_button.setVisible(index == 0)
+        self._refresh_filename()
+
+    def _refresh_filename(self, *, reset: bool = False) -> None:
+        suggested = (
+            self.event_tab.suggested_filename()
+            if self.tabs.currentWidget() is self.event_tab
+            else self._suggested_filename()
+        )
+        if reset or self.filename.text().strip() in ("", self._default_filename):
+            self.filename.setText(suggested)
+        self._default_filename = suggested
 
     def _generate(self) -> None:
         if self._thread is not None:
@@ -259,6 +272,8 @@ class MainWindow(QMainWindow):
             )
             QMessageBox.information(self, "Nothing to read", message)
             return
+        if is_event:
+            self._refresh_filename()
         destination = self._destination()
         if destination is None:
             return
@@ -272,7 +287,9 @@ class MainWindow(QMainWindow):
 
         thread = QThread(self)
         worker = SpeechWorker(
-            text, str(self.voice.currentData()), destination, self._engine
+            text, str(self.voice.currentData()), destination, self._engine,
+            event_texts=self.event_tab.event_narrations() if is_event else None,
+            event_pause_seconds=self.event_tab.pause_seconds.value() if is_event else 0,
         )
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
@@ -505,7 +522,7 @@ class MainWindow(QMainWindow):
             self.play_button.setText("Play audio")
             self.play_button.setEnabled(True)
             self.status.setText(f"Finished: {filename}")
-            self.filename.setText(self._suggested_filename())
+            self._refresh_filename(reset=True)
 
     def _stop_stream(self) -> None:
         self._stream_timer.stop()

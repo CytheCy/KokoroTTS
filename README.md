@@ -56,9 +56,15 @@ Category names containing commas are kept intact.
 
 Choose inclusive **Start year** and **End year** values. The preview shows the
 matching events in metadata date order, with filename order breaking date ties.
+The default audio filename uses the selected category or subcategory and year
+range, such as `AI-2040-2050.wav` (or `All categories-2040-2050.wav`). You can
+enter a custom filename; changing filters keeps that custom name.
 The **Read Year** checkbox is checked by default; uncheck it to omit years from
 the preview and speech. Enabled years use “Year 2040.” so the text cleaner does
 not mistake them for numbered-list markers. This preference is remembered.
+Set **Pause between events** in seconds (0–60, including fractional seconds).
+It defaults to 1 second and is remembered. The pause is inserted between events
+in both live playback and the saved WAV; 0 adds no silence between events.
 Click **Create audio** to read their years (when enabled), titles, and bodies as one continuous
 recording with the same voice, streaming playback, pause, cancel, and WAV output
 controls as Paste. Metadata itself is excluded. Notes with only a title are also

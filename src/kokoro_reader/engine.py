@@ -57,13 +57,25 @@ class KokoroEngine:
         on_progress: Callable[[int, int], None],
         is_cancelled: Callable[[], bool],
         on_audio: Callable[[bytes], None] | None = None,
+        *,
+        event_texts: list[str] | None = None,
+        event_pause_seconds: float = 1.0,
     ) -> None:
-        cleaned_text = clean_for_speech(text)
-        chunks = streaming_chunks(
-            cleaned_text,
-            first_limit=FIRST_CHUNK_LIMIT,
-            later_limit=LATER_CHUNK_LIMIT,
-        )
+        # Keep event boundaries separate from the paragraph and chunk boundaries
+        # within each narration, so pauses never split an event's title and body.
+        groups = []
+        for source in (event_texts if event_texts is not None else [text]):
+            group = streaming_chunks(
+                clean_for_speech(source),
+                first_limit=FIRST_CHUNK_LIMIT,
+                later_limit=LATER_CHUNK_LIMIT,
+            )
+            if group:
+                groups.append(group)
+        chunks = [
+            (chunk, event_pause_seconds if event_texts is not None and i == len(group) - 1 else 0.16)
+            for group in groups for i, chunk in enumerate(group)
+        ]
         if not chunks:
             raise ValueError("There is no text to read.")
 
@@ -76,9 +88,8 @@ class KokoroEngine:
 
         try:
             pipeline = self._pipeline(language_for_voice(voice))
-            silence = np.zeros(int(SAMPLE_RATE * 0.16), dtype=np.float32)
             with sf.SoundFile(temp_path, "w", samplerate=SAMPLE_RATE, channels=1) as output:
-                for index, chunk in enumerate(chunks, start=1):
+                for index, (chunk, pause_seconds) in enumerate(chunks, start=1):
                     if is_cancelled():
                         raise CancelledError
                     produced_audio = False
@@ -94,6 +105,7 @@ class KokoroEngine:
                                 on_audio(_pcm16(samples))
                             produced_audio = True
                     if produced_audio and index < len(chunks):
+                        silence = np.zeros(round(SAMPLE_RATE * pause_seconds), dtype=np.float32)
                         output.write(silence)
                         if on_audio is not None:
                             on_audio(_pcm16(silence))

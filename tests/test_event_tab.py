@@ -27,8 +27,8 @@ def test_event_filters_use_existing_speech_worker_and_preserve_paste(tmp_path, m
     monkeypatch.setattr(main_window, "output_directory", lambda: tmp_path)
     calls = []
 
-    def synthesize(_engine, text, voice, destination, progress, cancelled, audio_ready):
-        calls.append(text)
+    def synthesize(_engine, text, voice, destination, progress, cancelled, audio_ready, **options):
+        calls.append((text, options))
         destination.write_bytes(b"fake wav")
 
     monkeypatch.setattr(KokoroEngine, "synthesize", synthesize)
@@ -56,18 +56,73 @@ def test_event_filters_use_existing_speech_worker_and_preserve_paste(tmp_path, m
     event.end_year.setValue(2030)
     assert not event.narration()
     event.end_year.setValue(2050)
+    event.pause_seconds.setValue(2.5)
     window.generate_button.click()
     assert not event.choose_button.isEnabled()
     assert not event.read_year.isEnabled()
+    assert not event.pause_seconds.isEnabled()
     deadline = time.monotonic() + 5
     while window._thread is not None and time.monotonic() < deadline:
         app.processEvents()
         time.sleep(0.005)
     assert window._thread is None
-    assert calls == [text]
+    assert calls == [(text, {
+        "event_texts": [e.narration() for e in event.timeline.select("AI", 2040, 2050)],
+        "event_pause_seconds": 2.5,
+    })]
+    assert (tmp_path / "AI-2040-2050.wav").read_bytes() == b"fake wav"
+    assert window.filename.text() == "AI-2040-2050.wav"
     assert event.choose_button.isEnabled()
+    assert event.pause_seconds.isEnabled()
+    from kokoro_reader.event_tab import EventTab
+    restored = EventTab()
+    assert restored.pause_seconds.value() == 2.5
+    restored.close()
     assert window.editor.toPlainText() == "Keep this pasted text"
     window.tabs.setCurrentIndex(0)
     assert not window.batch_button.isHidden()
+    window.close()
+    app.processEvents()
+
+
+def test_event_default_filename_tracks_filters_and_preserves_custom_names(tmp_path, monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setattr(KokoroEngine, "preload", lambda *_: None)
+    monkeypatch.setattr(main_window, "output_directory", lambda: tmp_path)
+    QSettings.setDefaultFormat(QSettings.Format.IniFormat)
+    QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, str(tmp_path))
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow()
+    paste_name = window.filename.text()
+    event = window.event_tab
+    event.category.clear()
+    event.category.addItem("All categories", None)
+    event.category.addItem("Science / AI", "AI")
+    event.category.addItem("Science / Robots: future?", "Robots: future?")
+    event.start_year.setValue(2040)
+    event.end_year.setValue(2050)
+    window.tabs.setCurrentIndex(1)
+    assert window.filename.text() == "All categories-2040-2050.wav"
+    event.category.setCurrentIndex(1)
+    event.end_year.setValue(2049)
+    assert window.filename.text() == "AI-2040-2049.wav"
+    event.category.setCurrentIndex(2)
+    assert window.filename.text() == "Robots_ future_-2040-2049.wav"
+    window.tabs.setCurrentIndex(0)
+    assert window.filename.text() == paste_name
+    window.tabs.setCurrentIndex(1)
+    window.filename.setText("My custom narration.wav")
+    event.start_year.setValue(2041)
+    event.category.setCurrentIndex(1)
+    window.tabs.setCurrentIndex(0)
+    window.tabs.setCurrentIndex(1)
+    assert window.filename.text() == "My custom narration.wav"
+    assert window._destination() == tmp_path / "My custom narration.wav"
+    window.filename.clear()
+    event.end_year.setValue(2051)
+    assert window.filename.text() == "AI-2041-2051.wav"
+    (tmp_path / window.filename.text()).write_bytes(b"existing audio")
+    assert window._destination() == tmp_path / "AI-2041-2051-2.wav"
+    assert (tmp_path / "AI-2041-2051.wav").read_bytes() == b"existing audio"
     window.close()
     app.processEvents()
